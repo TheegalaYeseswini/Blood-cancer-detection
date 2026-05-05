@@ -24,6 +24,7 @@ dist/
 .vscode/*
 !.vscode/settings.json
 .idea/
+.vscode/
 
 # OS-specific files
 .DS_Store
