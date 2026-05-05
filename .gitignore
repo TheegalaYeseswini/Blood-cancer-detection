@@ -1,0 +1,33 @@
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local IDE/editor files
+.vscode/*
+!.vscode/settings.json
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Local test artifacts
+smoke_test_image.jpg
