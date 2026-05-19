@@ -1,184 +1,169 @@
-# Hierarchical Blood Cancer Detection from Microscopic Cell Images
+# Blood Cancer AI
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-ff4b4b)
 ![PyTorch](https://img.shields.io/badge/Framework-PyTorch-red)
-![Task](https://img.shields.io/badge/Task-Image%20Classification-green)
-![Status](https://img.shields.io/badge/Stage-Inference%20Ready-success)
+![Task](https://img.shields.io/badge/Task-Medical%20Image%20Classification-green)
+![Status](https://img.shields.io/badge/Status-Demo%20Ready-success)
 
-This repository packages a notebook-driven deep learning project into a reusable inference pipeline for **blood cancer image classification**. It combines a **broad 4-class classifier** with **specialized subtype classifiers** to produce hierarchical predictions from microscopic cell images.
-
-At a high level, the system:
-
-- predicts whether an image is **Leukemia**, **Lymphoma**, **Myeloma**, or **Healthy**
-- routes leukemia cases to a **4-class leukemia subtype model**
-- routes lymphoma cases to a **3-class lymphoma subtype model**
-- exposes the pipeline through a small Python CLI application
+A hierarchical deep-learning project for **blood cancer detection from microscopic blood-cell images**. This repository combines notebook-trained PyTorch models with a multi-page Streamlit application for interactive inference, model inspection, and portfolio-ready demos.
 
 ## Overview
 
-The project is built around three trained PyTorch models recovered from the notebooks in [`notebooks/`](./notebooks):
+The system predicts blood-cancer classes in **two stages**:
 
-1. **Tetra disease classifier**
-   Predicts one of four broad classes:
-   `LEUKEMIA`, `LYMPHOMA`, `MYELOMA`, `HEALTHY`
-2. **Leukemia subtype classifier**
-   Predicts one of:
-   `ALL`, `AML`, `CLL`, `CML`
-3. **Lymphoma subtype classifier**
-   Predicts one of:
-   `CLL`, `FL`, `MCL`
+1. A **broad disease classifier** predicts one of:
+   - `LEUKEMIA`
+   - `LYMPHOMA`
+   - `MYELOMA`
+   - `HEALTHY`
+2. A **specialized subtype model** is only used when the broad classifier predicts:
+   - `LEUKEMIA` -> subtype model predicts `ALL`, `AML`, `CLL`, `CML`
+   - `LYMPHOMA` -> subtype model predicts `CLL`, `FL`, `MCL`
 
-The notebooks contain the training and evaluation logic, while the source code in [`src/`](./src) turns those experiments into a reproducible local inference workflow.
+This hierarchical design keeps the pipeline easier to interpret, easier to demo, and closer to how the medical problem is structured.
 
-## Features
+## What This Repository Contains
 
-- Hierarchical inference: broad diagnosis first, subtype only when relevant
-- Project-local model loading from [`models/`](./models)
-- Support for `.jpg`, `.jpeg`, `.png`, `.bmp`, and other Pillow-readable image formats
-- CPU and CUDA inference modes
-- JSON-friendly output for downstream apps or demos
-- Clear separation between training notebooks and deployable inference code
-- Model-specific preprocessing reproduced from notebook training flows
+- trained model checkpoints in [`models/`](./models)
+- original training notebooks in [`notebooks/`](./notebooks)
+- reusable inference code in [`src/`](./src)
+- a production-style Streamlit UI for uploads, charts, sample inputs, and downloadable reports
+- sample microscopy images in [`test_samples/`](./test_samples)
 
-## Tech Stack
-
-### Core stack
-
-- Python
-- PyTorch
-- Torchvision
-- NumPy
-- Pillow
-
-### Training and evaluation stack used in notebooks
-
-- scikit-learn for classification reports and confusion matrices
-- Matplotlib and Seaborn for visualization
-- tqdm for progress tracking
-- Kaggle notebook environment for training experiments
-
-## ML / DL Concepts Used
-
-- Transfer learning with ImageNet-pretrained backbones
-- Hierarchical classification
-- Fine-tuning of selected backbone layers
-- Data augmentation for robust microscopy image classification
-- Class reweighting for imbalanced classification
-- Label smoothing
-- Focal loss
-- Learning-rate scheduling
-- Early stopping
-- Patient-wise splitting for lymphoma images
-
-This repository does **not** currently use GenAI; it is a computer vision classification project.
-
-## Architecture
+## Model Pipeline
 
 ```mermaid
 flowchart TD
-    A["Input blood-cell image"] --> B["Preprocess image"]
+    A["Input microscopy image"] --> B["Preprocess image"]
     B --> C["Broad classifier<br/>EfficientNet-B0"]
     C --> D{"Predicted class"}
-    D -->|"LEUKEMIA"| E["Leukemia subtype classifier<br/>EfficientNet-B0"]
-    D -->|"LYMPHOMA"| F["Lymphoma subtype classifier<br/>DenseNet121"]
-    D -->|"MYELOMA"| G["Return broad result"]
-    D -->|"HEALTHY"| H["Return broad result"]
-    E --> I["Final result: broad + subtype"]
-    F --> I
-    G --> I
-    H --> I
+    D -->|"LEUKEMIA"| E["Leukemia subtype model<br/>EfficientNet-B0"]
+    D -->|"LYMPHOMA"| F["Lymphoma subtype model<br/>DenseNet121"]
+    D -->|"MYELOMA / HEALTHY"| G["Return broad result"]
+    E --> H["Final routed output"]
+    F --> H
+    G --> H
 ```
 
-## Workflow
+## Models Used
 
-### Training flow in notebooks
+| Model | Checkpoint | Backbone | Output Labels | Role |
+|---|---|---|---|---|
+| Broad disease classifier | `models/blood_cancer.pth` | EfficientNet-B0 | `LEUKEMIA`, `LYMPHOMA`, `MYELOMA`, `HEALTHY` | Always runs first |
+| Leukemia subtype classifier | `models/lukemia_sub.pth` | EfficientNet-B0 | `ALL`, `AML`, `CLL`, `CML` | Runs only after a leukemia broad prediction |
+| Lymphoma subtype classifier | `models/lymphoma_sub.pth` | DenseNet121 | `CLL`, `FL`, `MCL` | Runs only after a lymphoma broad prediction |
 
-1. Prepare class-specific microscopy datasets.
-2. Apply image augmentations and normalization.
-3. Initialize a pretrained backbone.
-4. Replace the classifier head for the target label space.
-5. Train with task-specific loss and scheduler settings.
-6. Save the best checkpoint.
-7. Evaluate using accuracy, classification report, and confusion matrix.
+### Inference preprocessing
 
-### Inference flow in source code
+- All inference images are loaded with Pillow and converted to `RGB`
+- Images are resized to `224 x 224`
+- The broad classifier and leukemia subtype classifier use ImageNet normalization:
+  - mean: `(0.485, 0.456, 0.406)`
+  - std: `(0.229, 0.224, 0.225)`
+- The lymphoma subtype model uses resize + tensor conversion at inference
 
-1. [`app.py`](./app.py) parses the input image path and device.
-2. [`src/load_models.py`](./src/load_models.py) rebuilds each model architecture and loads `.pth` weights.
-3. [`src/preprocess.py`](./src/preprocess.py) loads the image and applies the correct preprocessing pipeline.
-4. [`src/predict.py`](./src/predict.py) runs the tetra classifier first, then conditionally runs the appropriate subtype model.
+## Dataset Information
 
-## Dataset
+The notebooks indicate that this project was built from **multiple microscopy image datasets** hosted through Kaggle notebook paths.
 
-The notebooks suggest the project combines multiple public microscopy datasets, referenced through Kaggle paths:
+### 1. Leukemia dataset
 
-- **Leukemia dataset**
-  Used for `ALL`, `AML`, `CLL`, `CML`, and `HEALTHY`
-- **Malignant lymphoma classification dataset**
-  Used for `CLL`, `FL`, and `MCL`
-- **SegPC / myeloma-style cell images**
-  Used for the `MYELOMA` branch in the broad classifier
+Used in:
+- `notebooks/lukemia_sub.ipynb`
+- `notebooks/blood_cancer.ipynb`
 
-### Dataset composition inferred from notebooks
+Notebook paths:
+- training root: `/kaggle/input/datasets/priyaadharshinivs062/leukemia-dataset/train/train`
+- test root: `/kaggle/input/datasets/priyaadharshinivs062/leukemia-dataset/test/test`
 
-#### Broad 4-class classifier
+Classes used:
+- `ALL`
+- `AML`
+- `CLL`
+- `CML`
+- healthy images also appear in the broader dataset construction
 
-The broad classifier notebook merges several sources into a single task:
+Notes:
+- The leukemia subtype notebook explicitly removes healthy folders before subtype training
+- The notebook output shows `12000` training images across the leukemia subtype classes
+- The test evaluation shown in the notebook uses `4000` images total, with `1000` samples per subtype
 
-- Leukemia images are grouped into one superclass: `LEUKEMIA`
-- Lymphoma images are grouped into one superclass: `LYMPHOMA`
-- Myeloma images become `MYELOMA`
-- Healthy blood smear images become `HEALTHY`
+### 2. Malignant lymphoma classification dataset
 
-Key notebook details:
+Used in:
+- `notebooks/lymphoma_sub.ipynb`
+- `notebooks/blood_cancer.ipynb`
 
-- Leukemia training pool: `12000` images
-- Lymphoma pool: `374` images
-- Myeloma pool: `498` images
-- Healthy pool: `3000` images
-- Lymphoma split is **patient-wise**
-- Lymphoma data is oversampled `x4`
-- Myeloma data is oversampled `x2`
+Notebook path:
+- `/kaggle/input/datasets/andrewmvd/malignant-lymphoma-classification`
 
-#### Leukemia subtype classifier
+Classes used:
+- `CLL`
+- `FL`
+- `MCL`
 
-- 4 classes: `ALL`, `AML`, `CLL`, `CML`
-- Training set size printed in notebook: `12000`
-- Test evaluation size: `4000` images total, `1000` per subtype
-- Healthy classes are explicitly removed before training
+Notes:
+- The lymphoma subtype notebook uses an `80/20` train-validation split
+- The broad-class notebook also uses lymphoma images as the `LYMPHOMA` superclass
+- The broad-class notebook performs a **patient-wise split** for lymphoma data
 
-#### Lymphoma subtype classifier
+### 3. Myeloma / SegPC-style microscopy data
 
-- 3 classes: `CLL`, `FL`, `MCL`
-- Dataset split: `80/20` train/validation
-- Validation report shown on `75` images
+Used in:
+- `notebooks/blood_cancer.ipynb`
 
-## Notebook Breakdown
+Notebook paths:
+- training: `//kaggle/input/datasets/sbilab/segpc2021dataset/TCIA_SegPC_dataset/TCIA_SegPC_dataset/TCIA_SegPC_dataset/train/train/train/x`
+- validation: `/kaggle/input/datasets/sbilab/segpc2021dataset/TCIA_SegPC_dataset/TCIA_SegPC_dataset/TCIA_SegPC_dataset/validation/validation/x`
 
-### [`notebooks/blood_cancer.ipynb`](./notebooks/blood_cancer.ipynb)
+Role:
+- contributes the `MYELOMA` class for the broad disease classifier
+
+### 4. Broad-class dataset composition inferred from the notebook
+
+The broad classifier merges multiple datasets into a single 4-class problem:
+
+- `LEUKEMIA` -> grouped from leukemia subtype images
+- `LYMPHOMA` -> grouped from lymphoma subtype images
+- `MYELOMA` -> grouped from myeloma microscopy images
+- `HEALTHY` -> grouped from healthy blood-smear images
+
+Counts printed in the notebook:
+
+| Group | Approx. image count in notebook output |
+|---|---:|
+| Leukemia pool | 12000 |
+| Lymphoma pool | 374 |
+| Myeloma pool | 498 |
+| Healthy pool | 3000 |
+
+Additional broad-class notebook handling:
+- lymphoma images were oversampled `x4`
+- myeloma images were oversampled `x2`
+- external test folders were used for leukemia subtype-specific evaluation
+
+## Training Notebook Summary
+
+### `notebooks/blood_cancer.ipynb`
 
 Purpose:
 - trains the **broad 4-class blood cancer classifier**
 
-Backbone:
+Architecture:
 - `EfficientNet-B0`
 
-Task:
-- `LEUKEMIA` vs `LYMPHOMA` vs `MYELOMA` vs `HEALTHY`
-
-Notable training choices:
-- image size: `224 x 224`
-- batch size: `32`
+Key settings recovered from notebook cells:
 - epochs: `10`
+- batch size: `32`
 - optimizer: `Adam(lr=1e-4)`
 - scheduler: `StepLR(step_size=3, gamma=0.5)`
-- weighted cross-entropy with label smoothing `0.1`
-- gradient clipping
-- early stopping
-- backbone initially frozen, then unfrozen after epoch 4
+- loss: weighted cross-entropy with label smoothing `0.1`
+- backbone initially frozen, later unfrozen
+- early stopping used
 
-Augmentations:
-- resize
+Training augmentations:
+- resize to `224 x 224`
 - horizontal flip
 - rotation `40`
 - color jitter
@@ -187,90 +172,68 @@ Augmentations:
 - random grayscale
 - ImageNet normalization
 
-### [`notebooks/lukemia_sub.ipynb`](./notebooks/lukemia_sub.ipynb)
+### `notebooks/lukemia_sub.ipynb`
 
 Purpose:
 - trains the **leukemia subtype classifier**
 
-Backbone:
+Architecture:
 - `EfficientNet-B0`
 
-Task:
-- `ALL`, `AML`, `CLL`, `CML`
-
-Notable training choices:
-- image size: `224 x 224`
+Key settings:
 - batch size: `32`
-- training loop configured for `25` epochs in the function
+- training loop configured for `25` epochs
 - optimizer: `Adam`
   - backbone LR: `3e-5`
   - classifier LR: `3e-4`
 - weight decay: `1e-4`
 - scheduler: `ReduceLROnPlateau`
-- label smoothing `0.05`
+- label smoothing: `0.05`
 - mixed precision training with `torch.amp`
-- balanced validation subset with `200` samples per class
-- custom dataset cleanup to remove healthy-class folders
 
-Augmentations:
-- resize
+Training augmentations:
+- resize to `224 x 224`
 - horizontal flip
 - small rotation
 - random affine translation
 - color jitter
 - ImageNet normalization
 
-### [`notebooks/lymphoma_sub.ipynb`](./notebooks/lymphoma_sub.ipynb)
+### `notebooks/lymphoma_sub.ipynb`
 
 Purpose:
 - trains the **lymphoma subtype classifier**
 
-Backbone:
+Architecture:
 - `DenseNet121`
 
-Task:
-- `CLL`, `FL`, `MCL`
-
-Notable training choices:
-- image size: `224 x 224`
-- batch size: `32`
+Key settings:
 - epochs: `20`
+- batch size: `32`
 - optimizer: `AdamW`
-  - early features LR: `1e-5`
-  - deeper features LR: `1e-4`
+  - early layers LR: `1e-5`
+  - deeper layers LR: `1e-4`
   - classifier LR: `1e-3`
 - scheduler: `ReduceLROnPlateau(mode='max', patience=3)`
-- focal loss
-- 80/20 dataset split
+- loss: `FocalLoss`
 
-Augmentations:
-- resize
+Training augmentations:
+- resize to `224 x 224`
 - horizontal flip
 - vertical flip
 - rotation `20`
 - color jitter
 - random resized crop
 
-## Source Code
+## Results Snapshot
 
-- [`app.py`](./app.py)
-  CLI entrypoint for image classification
-- [`src/load_models.py`](./src/load_models.py)
-  Recreates model architectures and loads `.pth` checkpoints
-- [`src/preprocess.py`](./src/preprocess.py)
-  Image loading and transform building
-- [`src/predict.py`](./src/predict.py)
-  Routed prediction logic and probability formatting
+The following values are taken from notebook outputs.
 
-## Results
-
-The following metrics were extracted from notebook outputs.
-
-| Model | Task | Backbone | Reported Metric |
-|---|---|---|---|
-| Broad classifier | `LEUKEMIA / LYMPHOMA / MYELOMA / HEALTHY` | EfficientNet-B0 | **99.79% test accuracy** on 5,352 images |
-| Leukemia subtype | `ALL / AML / CLL / CML` | EfficientNet-B0 | **87.62% test accuracy** on 4,000 images |
-| Lymphoma subtype | `CLL / FL / MCL` | DenseNet121 | **84.00% validation accuracy** on 75 images |
+| Model | Metric |
+|---|---|
+| Broad classifier | **99.79%** test accuracy |
+| Leukemia subtype classifier | **87.62%** test accuracy |
+| Lymphoma subtype classifier | **84.00%** validation accuracy |
 
 ### Broad classifier highlights
 
@@ -280,42 +243,80 @@ The following metrics were extracted from notebook outputs.
 
 ### Leukemia subtype highlights
 
-- best performing class in notebook output: `CML` with recall `1.00`
-- hardest class in notebook output: `ALL` with recall `0.65`
+- `ALL`: precision `0.91`, recall `0.65`, F1 `0.76`
+- `AML`: precision `0.79`, recall `0.93`, F1 `0.85`
+- `CLL`: precision `0.88`, recall `0.92`, F1 `0.90`
+- `CML`: precision `0.95`, recall `1.00`, F1 `0.97`
 
 ### Lymphoma subtype highlights
 
-- `CLL`: precision `0.87`, recall `0.80`
-- `FL`: precision `0.90`, recall `0.90`
-- `MCL`: precision `0.74`, recall `0.81`
+- `CLL`: precision `0.87`, recall `0.80`, F1 `0.83`
+- `FL`: precision `0.90`, recall `0.90`, F1 `0.90`
+- `MCL`: precision `0.74`, recall `0.81`, F1 `0.77`
 
-## Project Structure
+## Streamlit App
+
+The repository includes a multi-page Streamlit interface designed for demos, recruiters, and deployment.
+
+### Pages
+
+- `app.py`
+  - landing dashboard
+  - project overview
+  - benchmark summary
+  - dataset composition preview
+- `pages/1_Inference_Studio.py`
+  - sample gallery
+  - file upload
+  - camera input
+  - routed inference
+  - JSON / CSV / PDF exports
+- `pages/2_Model_Insights.py`
+  - benchmark charts
+  - class-wise metrics
+  - model catalog
+  - notebook-derived summaries
+- `pages/3_Workflow_and_Data.py`
+  - routing workflow
+  - data overview
+  - repository map
+- `pages/4_About.py`
+  - deployment notes
+  - portfolio positioning
+  - limitations and roadmap
+
+## Repository Structure
 
 ```text
-Main_model/
-├── app.py
-├── README.md
-├── requirements.txt
-├── models/
-│   ├── blood_cancer.pth
-│   ├── lukemia_sub.pth
-│   ├── lymphoma_sub.pth
-│   └── README.md
-├── notebooks/
-│   ├── blood_cancer.ipynb
-│   ├── lukemia_sub.ipynb
-│   ├── lymphoma_sub.ipynb
-│   └── README.md
-├── src/
-│   ├── __init__.py
-│   ├── load_models.py
-│   ├── predict.py
-│   └── preprocess.py
-└── test_samples/
-    ├── 1703.bmp
-    ├── ALL.jpg
-    ├── healty_test.jpg
-    └── MCL.png
+project/
+|-- app.py
+|-- pages/
+|   |-- 1_Inference_Studio.py
+|   |-- 2_Model_Insights.py
+|   |-- 3_Workflow_and_Data.py
+|   `-- 4_About.py
+|-- components/
+|   |-- cards.py
+|   |-- charts.py
+|   `-- theme.py
+|-- utils/
+|   |-- exports.py
+|   |-- inference.py
+|   |-- project_content.py
+|   `-- state.py
+|-- assets/
+|   `-- theme.css
+|-- src/
+|   |-- cli.py
+|   |-- load_models.py
+|   |-- predict.py
+|   `-- preprocess.py
+|-- models/
+|-- notebooks/
+|-- test_samples/
+|-- requirements.txt
+|-- Dockerfile
+`-- README.md
 ```
 
 ## Installation
@@ -341,83 +342,121 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-## Usage
+## Running the Project
 
-### Run standard prediction
-
-```powershell
-python app.py --image ".\\test_samples\\ALL.jpg"
-```
-
-### Get structured JSON output
+### Run the Streamlit app
 
 ```powershell
-python app.py --image ".\\test_samples\\ALL.jpg" --json
+streamlit run app.py
 ```
 
-### Select the device automatically
+If `streamlit` is not recognized:
 
 ```powershell
-python app.py --image ".\\test_samples\\MCL.png" --device auto --json
+.\venv\Scripts\streamlit.exe run app.py
 ```
 
-### Expected behavior
+Default local URL:
 
-- If the broad classifier predicts `LEUKEMIA`, the app runs the leukemia subtype model.
-- If the broad classifier predicts `LYMPHOMA`, the app runs the lymphoma subtype model.
-- If the broad classifier predicts `MYELOMA` or `HEALTHY`, no subtype model is used.
-
-## Example Output
-
-```json
-{
-  "tetraclassifier": {
-    "predicted_label": "LEUKEMIA"
-  },
-  "selected_subtype_model": {
-    "predicted_label": "ALL"
-  },
-  "combined": {
-    "primary_label": "LEUKEMIA",
-    "secondary_label": "ALL"
-  }
-}
+```text
+http://localhost:8501
 ```
+
+### Run CLI inference
+
+```powershell
+python -m src.cli --image ".\test_samples\ALL.jpg"
+python -m src.cli --image ".\test_samples\MCL.png" --json
+```
+
+## Example Inputs
+
+Bundled sample images in `test_samples/`:
+
+- `ALL.jpg`
+- `MCL.png`
+- `1703.bmp`
+- `healty_test.jpg`
+
+Supported formats:
+
+- `.jpg`
+- `.jpeg`
+- `.png`
+- `.bmp`
+- other Pillow-readable image formats
+
+## Deployment
+
+### Streamlit Cloud
+
+Best fit for a quick public demo:
+- entrypoint: `app.py`
+- dependency file: `requirements.txt`
+
+### Hugging Face Spaces
+
+Good option for public AI demos:
+- choose the Streamlit app type
+- keep `app.py` as the main entry file
+
+### Render
+
+Useful for hosted web deployment:
+- can use the Dockerfile
+- free tier may have cold starts
+
+### Docker
+
+```powershell
+docker build -t blood-cancer-ai .
+docker run -p 8501:8501 blood-cancer-ai
+```
+
+## Tech Stack
+
+### Frontend
+
+- Streamlit
+- Plotly
+- Custom CSS
+
+### Inference
+
+- PyTorch
+- Torchvision
+- Pillow
+- NumPy
+- Pandas
+
+### Reporting and utilities
+
+- ReportLab
+- scikit-learn
+- Matplotlib
+- Seaborn
+- tqdm
 
 ## Limitations
 
-- Training logic lives in notebooks rather than a fully modular training package.
-- Dataset download and preparation are not yet automated in this repository.
-- Lymphoma results are reported on a validation split, not a separate published test set.
-- No experiment tracking, model cards, or calibration analysis is included yet.
-- No web app or API deployment layer is included yet.
+- Training logic still lives in notebooks rather than a fully modular training package
+- Dataset download and preparation are not automated in this repository
+- The lymphoma model metric is reported on a validation split, not a separate external test set
+- Medical diagnosis in practice requires more than a single image and should not rely on this system alone
 
 ## Future Improvements
 
-- Refactor notebook training code into reusable Python modules
-- Add dataset preparation scripts and documented data provenance
-- Export confusion matrices and training curves as versioned assets
-- Add a Streamlit or FastAPI front end for demo use
-- Add unit tests for model loading and preprocessing
-- Add model calibration and uncertainty reporting
-- Benchmark CPU vs GPU inference latency
-
-## Contributing
-
-Contributions are welcome, especially around:
-
-- code cleanup and training refactors
-- reproducible dataset pipelines
-- UI or API deployment
-- evaluation on external clinical-style test sets
-
-Suggested workflow:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make focused changes
-4. Open a pull request with a clear summary
+- Grad-CAM or saliency-based explainability
+- modular training scripts outside notebooks
+- experiment tracking with MLflow or Weights & Biases
+- external test-set validation
+- API-first deployment with FastAPI
+- richer clinical-style reporting
 
 ## License
 
-This repository does **not currently include a license file**. If you want others to reuse or contribute to the code confidently, add a `LICENSE` file such as `MIT` or `Apache-2.0`.
+No license file is currently included. Add one before sharing or open-sourcing the project broadly.
+
+## Important Note
+
+This repository is for **educational, research, demo, and portfolio use**. It is **not a medical device** and should not be used for real clinical diagnosis or treatment decisions.

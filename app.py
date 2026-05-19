@@ -1,103 +1,162 @@
 from __future__ import annotations
 
-import argparse
-import json
-import sys
-from pathlib import Path
+import streamlit as st
 
-import torch
-
-from src.load_models import ModelLoadError, get_default_model_configs, load_all_models
-from src.predict import predict_routed
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run inference with leukemia, lymphoma, and tetra blood-cell classifiers."
-    )
-    parser.add_argument(
-        "--image",
-        required=True,
-        help="Path to the input image to classify.",
-    )
-    parser.add_argument(
-        "--device",
-        default="cpu",
-        choices=["cpu", "cuda", "auto"],
-        help="Inference device. Use 'auto' to prefer CUDA when available.",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Print the full prediction output as JSON.",
-    )
-    return parser.parse_args()
+from components.cards import render_hero, render_metric_grid, render_note_card, render_section_header
+from components.charts import dataset_distribution_chart, model_accuracy_chart
+from components.theme import inject_theme, render_sidebar
+from utils.project_content import (
+    APP_COPY,
+    DATASET_DISTRIBUTION,
+    DEPLOYMENT_OPTIONS,
+    MODEL_BENCHMARKS,
+    SAMPLE_EXPECTATIONS,
+    get_sample_catalog,
+)
+from utils.state import init_session_state
 
 
-def resolve_device(requested_device: str) -> str:
-    if requested_device == "auto":
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    if requested_device == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA was requested, but no GPU is available for PyTorch.")
-    return requested_device
+st.set_page_config(
+    page_title="Blood Cancer AI",
+    page_icon=":drop_of_blood:",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 
-def format_prediction_output(results: dict) -> str:
-    lines = []
+def render_homepage() -> None:
+    init_session_state()
+    sidebar_state = render_sidebar()
+    inject_theme(sidebar_state["theme_name"])
 
-    tetra_prediction = results["tetraclassifier"]
-    lines.append(f"{tetra_prediction['model_name']}:")
-    lines.append(
-        f"  Predicted label: {tetra_prediction['predicted_label']} "
-        f"(confidence: {tetra_prediction['confidence']:.4f})"
+    sample_count = len(get_sample_catalog())
+    render_hero(
+        eyebrow="Medical AI Showcase",
+        title="Hierarchical Blood Cancer Detection Dashboard",
+        description=(
+            "A Streamlit frontend for routed microscopic cell-image inference. "
+            "The app first predicts the broad blood-cancer category, then selectively "
+            "runs the relevant subtype model for leukemia or lymphoma."
+        ),
+        pills=[
+            "EfficientNet-B0 + DenseNet121",
+            "Microscopy Image Classification",
+            "Portfolio-Ready Demo",
+        ],
     )
 
-    subtype_prediction = results["selected_subtype_model"]
-    if subtype_prediction is not None:
-        lines.append(f"{subtype_prediction['model_name']}:")
-        lines.append(
-            f"  Predicted label: {subtype_prediction['predicted_label']} "
-            f"(confidence: {subtype_prediction['confidence']:.4f})"
+    render_metric_grid(
+        [
+            {
+                "label": "Broad Classifier",
+                "value": "99.79%",
+                "caption": "Reported test accuracy from notebook evaluation",
+            },
+            {
+                "label": "Subtype Models",
+                "value": "2",
+                "caption": "Specialized routing for leukemia and lymphoma",
+            },
+            {
+                "label": "Sample Inputs",
+                "value": str(sample_count),
+                "caption": "Curated test images bundled with the repo",
+            },
+            {
+                "label": "Supported Formats",
+                "value": "JPG / PNG / BMP",
+                "caption": "Any Pillow-readable image can be uploaded",
+            },
+        ]
+    )
+
+    col_left, col_right = st.columns([1.25, 1], gap="large")
+    with col_left:
+        render_section_header(
+            "What This App Does",
+            "The frontend is aligned to the actual repository workflow rather than a generic demo shell.",
         )
-    else:
-        lines.append("Subtype model:")
-        lines.append("  Not run for this tetra prediction.")
+        st.markdown(
+            """
+            - Runs the **tetra disease classifier** first to predict `LEUKEMIA`, `LYMPHOMA`, `MYELOMA`, or `HEALTHY`
+            - Routes `LEUKEMIA` predictions to the **4-class leukemia subtype model**
+            - Routes `LYMPHOMA` predictions to the **3-class lymphoma subtype model**
+            - Exposes notebook-derived metrics, dataset composition, and example imagery in a presentation-ready format
+            """
+        )
 
-    combined = results["combined"]
-    lines.append("Combined summary:")
-    lines.append(f"  Primary label: {combined['primary_label']}")
-    lines.append(f"  Secondary label: {combined['secondary_label']}")
-    lines.append(f"  Note: {combined['summary']}")
-    return "\n".join(lines)
+        render_section_header(
+            "Interactive Workflow",
+            "Use the multipage navigation in the sidebar to explore the project from different angles.",
+        )
+        st.markdown(
+            """
+            1. Visit **Inference Studio** to upload an image, use the webcam, or try bundled examples  
+            2. Open **Model Insights** to inspect benchmark metrics and architecture choices  
+            3. Review **Workflow & Data** to understand routing logic and dataset composition  
+            4. Use **About** for deployment notes, limitations, and portfolio positioning  
+            """
+        )
 
+    with col_right:
+        render_section_header(
+            "Project Benchmarks",
+            "Notebook metrics extracted from the repo and presented as portfolio-friendly summaries.",
+        )
+        st.plotly_chart(model_accuracy_chart(MODEL_BENCHMARKS), use_container_width=True)
 
-def main() -> int:
-    args = parse_args()
-    image_path = Path(args.image)
+        render_note_card(
+            "Deployment Ready",
+            "This app is organized for Streamlit Cloud, Hugging Face Spaces, Render, or Docker-based deployment.",
+        )
 
-    if not image_path.exists():
-        print(f"Input image not found: {image_path}", file=sys.stderr)
-        return 1
+    sample_cols = st.columns(2, gap="large")
+    with sample_cols[0]:
+        render_section_header(
+            "Dataset Composition",
+            "The broad classifier blends multiple microscopy datasets into a single routed diagnosis flow.",
+        )
+        st.plotly_chart(
+            dataset_distribution_chart(DATASET_DISTRIBUTION),
+            use_container_width=True,
+        )
 
-    try:
-        device = resolve_device(args.device)
-        model_configs = get_default_model_configs()
-        loaded_models = load_all_models(model_configs, device=device)
-        results = predict_routed(image_source=image_path, loaded_models=loaded_models)
-    except ModelLoadError as exc:
-        print(f"Model loading error: {exc}", file=sys.stderr)
-        return 1
-    except Exception as exc:
-        print(f"Prediction failed: {exc}", file=sys.stderr)
-        return 1
+    with sample_cols[1]:
+        render_section_header(
+            "Bundled Example Inputs",
+            "These repository images are useful for quick smoke tests and demos.",
+        )
+        for sample in get_sample_catalog():
+            expected = SAMPLE_EXPECTATIONS.get(sample["name"], "Sample image")
+            st.markdown(
+                f"""
+                <div class="glass-card">
+                    <div class="card-title">{sample['name']}</div>
+                    <div class="card-subtitle">{expected}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-    if args.json:
-        print(json.dumps(results, indent=2))
-    else:
-        print(format_prediction_output(results))
+    deploy_cols = st.columns(len(DEPLOYMENT_OPTIONS), gap="medium")
+    for col, option in zip(deploy_cols, DEPLOYMENT_OPTIONS):
+        with col:
+            render_note_card(option["name"], option["summary"])
+            st.caption(option["detail"])
 
-    return 0
+    render_section_header(
+        "Quick Start",
+        "Run the Streamlit app locally or fall back to the preserved CLI module for terminal-based inference.",
+    )
+    st.code(
+        "python -m venv venv\n"
+        ".\\venv\\Scripts\\Activate.ps1\n"
+        "python -m pip install -r requirements.txt\n"
+        "streamlit run app.py",
+        language="powershell",
+    )
+    st.caption(APP_COPY["medical_disclaimer"])
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    render_homepage()
