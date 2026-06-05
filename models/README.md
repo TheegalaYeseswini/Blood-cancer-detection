@@ -1,7 +1,9 @@
 This folder stores the trained model weights used by the app.
 
+- `broadclassifier.pth`
+  Broad tetra classifier currently used by the app
 - `blood_cancer.pth`
-  Broad tetra classifier
+  Legacy broad-classifier filename still supported if present
 - `lukemia_sub.pth`
   Leukemia subtype classifier
 - `lymphoma_sub.pth`

@@ -40,6 +40,15 @@ class LoadedModel:
     device: str
 
 
+def resolve_model_path(*candidates: str) -> Path:
+    """Return the first existing model path, or the first candidate if none exist."""
+    candidate_paths = [MODELS_DIR / candidate for candidate in candidates]
+    for candidate_path in candidate_paths:
+        if candidate_path.exists():
+            return candidate_path
+    return candidate_paths[0]
+
+
 def build_leukemia_model() -> nn.Module:
     model = models.efficientnet_b0(weights=None)
     model.classifier[1] = nn.Sequential(
@@ -96,7 +105,7 @@ def get_default_model_configs() -> Dict[str, ModelConfig]:
         ),
         "tetraclassifier": ModelConfig(
             name="Tetra Disease Classifier",
-            path=MODELS_DIR / "blood_cancer.pth",
+            path=resolve_model_path("blood_cancer.pth", "broadclassifier.pth"),
             framework="torch",
             class_names=["LEUKEMIA", "LYMPHOMA", "MYELOMA", "HEALTHY"],
             preprocess=PreprocessConfig(

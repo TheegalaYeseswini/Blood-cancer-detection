@@ -8,6 +8,5 @@ reportlab
 scikit-learn
 seaborn
 streamlit
-torch
-torchvision
 tqdm
+uvicorn<0.46
