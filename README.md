@@ -453,9 +453,6 @@ docker run -p 8501:8501 blood-cancer-ai
 - API-first deployment with FastAPI
 - richer clinical-style reporting
 
-## License
-
-No license file is currently included. Add one before sharing or open-sourcing the project broadly.
 
 ## Important Note
 
